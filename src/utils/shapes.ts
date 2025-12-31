@@ -9,7 +9,8 @@ const getTextCoordinates = (text: string, count: number, radius: number) => {
   // 1. Setup Canvas Dimensions
   // Use a very large font size for maximum resolution
   const fontSize = 200; 
-  const font = `900 ${fontSize}px "Arial", sans-serif`;
+  // Changed to Verdana for wider, clearer letters
+  const font = `900 ${fontSize}px "Verdana", "Arial", sans-serif`;
   ctx.font = font;
   
   const textMetrics = ctx.measureText(text);

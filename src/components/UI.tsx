@@ -1,7 +1,7 @@
 import React from 'react';
 import { useStore, ShapeType } from '../store';
 import { motion } from 'framer-motion';
-import { Heart, Circle, Disc, Flower2, Sparkles, Orbit, ArrowLeft, Type } from 'lucide-react';
+import { Heart, Circle, Disc, Flower2, Sparkles, Orbit, ArrowLeft, Type, Hand } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -18,7 +18,6 @@ const UI: React.FC = () => {
   const { currentShape, setShape, isHandDetected, userName } = useStore();
 
   // Add Name option dynamically if user has a name
-  // FIX: Increased slice to 8 to match input limit
   const displayShapes = userName 
     ? [...shapes, { id: 'text' as ShapeType, icon: Type, label: userName.slice(0, 8) }] 
     : shapes;
@@ -27,16 +26,27 @@ const UI: React.FC = () => {
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-8 z-50">
       <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
         <div className="pointer-events-auto">
-            <Link to="/" className="flex items-center gap-2 text-white/50 hover:text-white transition-colors mb-2 text-sm">
-                <ArrowLeft size={16} /> Back to Home
+            <Link to="/" className="flex items-center gap-2 text-white/50 hover:text-white transition-colors mb-3 text-sm group">
+                <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> Back to Home
             </Link>
-            <h1 className="text-2xl sm:text-4xl font-bold text-white tracking-tighter drop-shadow-lg">
-                Particle<span className="text-cyan-400">Flow</span>
-            </h1>
+            <div className="flex items-center gap-3">
+                <div className="p-2 bg-cyan-500/10 rounded-lg border border-cyan-500/20 backdrop-blur-md">
+                    {/* Changed to Hand icon to reflect functionality */}
+                    <Hand className="text-cyan-400" size={32} />
+                </div>
+                <div>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tighter drop-shadow-lg leading-none">
+                        Particle<span className="text-cyan-400">Flow</span>
+                    </h1>
+                    <p className="text-[10px] text-white/40 font-mono tracking-widest uppercase mt-1">
+                        Hand-Controlled Universe
+                    </p>
+                </div>
+            </div>
         </div>
         
         <div className={clsx(
-          "px-4 py-2 rounded-full backdrop-blur-md border transition-colors duration-300 self-start sm:self-auto sm:mr-auto sm:ml-8",
+          "px-4 py-2 rounded-full backdrop-blur-md border transition-colors duration-300 self-start sm:self-auto sm:mr-auto sm:ml-8 mt-2 sm:mt-0",
           isHandDetected 
             ? "bg-green-500/20 border-green-500/50 text-green-300" 
             : "bg-red-500/20 border-red-500/50 text-red-300"
