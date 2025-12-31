@@ -1,11 +1,116 @@
 import * as THREE from 'three';
 
-// Helper to get points AND colors for different shapes
-export const getShapeData = (type: string, count: number, radius: number = 2) => {
+// Helper to generate text coordinates using a canvas
+const getTextCoordinates = (text: string, count: number, radius: number) => {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return { positions: new Float32Array(count * 3), colors: new Float32Array(count * 3) };
+
+  // 1. Setup Canvas Dimensions
+  // Use a very large font size for maximum resolution
+  const fontSize = 200; 
+  const font = `900 ${fontSize}px "Arial", sans-serif`;
+  ctx.font = font;
+  
+  const textMetrics = ctx.measureText(text);
+  const textWidth = textMetrics.width;
+  
+  // Make canvas large enough to hold the text with padding
+  const width = Math.ceil(textWidth + fontSize); 
+  const height = Math.ceil(fontSize * 3); // ample vertical space
+
+  canvas.width = width;
+  canvas.height = height;
+
+  // 2. Draw Text
+  // Black background
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, width, height);
+  
+  // White text
+  ctx.font = font;
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, width / 2, height / 2);
+
+  // 3. Sample Pixels
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  
+  const validPixels: {x: number, y: number}[] = [];
+
+  // Sampling step: Lower = Higher Density = Clearer Text
+  // We dynamically adjust step based on text length to keep particle count reasonable
+  const step = 4; 
+
+  for (let y = 0; y < height; y += step) { 
+    for (let x = 0; x < width; x += step) {
+      const index = (y * width + x) * 4;
+      // Threshold: only pick pixels that are bright enough
+      if (data[index] > 128) { 
+        validPixels.push({ x, y });
+      }
+    }
+  }
+
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const vec = new THREE.Vector3();
   const color = new THREE.Color();
+
+  // 4. Map to 3D
+  // We want the text to be about 25 units wide in 3D space
+  const target3DWidth = 25; 
+  const scale = target3DWidth / width;
+
+  for (let i = 0; i < count; i++) {
+    // If we have valid pixels, cycle through them. 
+    // If we run out of pixels, we loop back.
+    const pixel = validPixels.length > 0 ? validPixels[i % validPixels.length] : null;
+    
+    if (pixel) {
+        const x = (pixel.x - width / 2) * scale; 
+        const y = -(pixel.y - height / 2) * scale; 
+        
+        // Minimal Z-depth for a "flat" but 3D look
+        const z = (Math.random() - 0.5) * 0.5; 
+
+        vec.set(x, y, z);
+    } else {
+        // Fallback (should rarely happen if text is valid)
+        vec.set((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10);
+    }
+
+    positions[i * 3] = vec.x;
+    positions[i * 3 + 1] = vec.y;
+    positions[i * 3 + 2] = vec.z;
+
+    // Color Gradient: Left (Cyan) to Right (Purple)
+    const t = (vec.x + target3DWidth/2) / target3DWidth; 
+    color.setHSL(t * 0.6 + 0.5, 0.9, 0.6); 
+
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+  }
+
+  return { positions, colors };
+};
+
+export const getShapeData = (type: string, count: number, radius: number = 2, extraData?: any) => {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const vec = new THREE.Vector3();
+  const color = new THREE.Color();
+
+  // Handle Text Special Case
+  if (type === 'text') {
+    // Ensure we take up to 8 chars
+    const rawText = extraData?.text || "USER";
+    const safeText = rawText.substring(0, 8).toUpperCase();
+    return getTextCoordinates(safeText, count, radius);
+  }
 
   // Default colors for non-specific shapes (gradient)
   const color1 = new THREE.Color('#00ffff'); // Cyan
@@ -82,10 +187,10 @@ export const getShapeData = (type: string, count: number, radius: number = 2) =>
         
         // Sun Color: Gradient from core (white/yellow) to edge (red/orange)
         const distFromCenter = rSun / 1.8;
-        if (distFromCenter < 0.2) color.setHex(0xFFFFFF); // Core hot
-        else if (distFromCenter < 0.5) color.setHex(0xFFD700); // Gold
-        else if (distFromCenter < 0.8) color.setHex(0xFF8C00); // Orange
-        else color.setHex(0xFF4500); // Red edge
+        if (distFromCenter < 0.2) color.setHex(0xFFFFFF); 
+        else if (distFromCenter < 0.5) color.setHex(0xFFD700); 
+        else if (distFromCenter < 0.8) color.setHex(0xFF8C00); 
+        else color.setHex(0xFF4500); 
       } else {
         // Planets
         const orbits = [
@@ -102,27 +207,22 @@ export const getShapeData = (type: string, count: number, radius: number = 2) =>
         const planetIndex = Math.floor(Math.random() * orbits.length);
         const planet = orbits[planetIndex];
         
-        // Fixed angle per planet so they are spread out
         const planetAngle = (planetIndex / orbits.length) * Math.PI * 2 + (Math.PI / 4);
         
-        // Planet Center
         const cx = Math.cos(planetAngle) * planet.r;
         const cz = Math.sin(planetAngle) * planet.r;
         
-        // Saturn Rings Logic
         if (planet.type === 'saturn' && Math.random() > 0.4) {
              const ringR = planet.size * 1.2 + Math.random() * 1.0;
              const ringAng = Math.random() * Math.PI * 2;
              vec.set(
                  cx + Math.cos(ringAng) * ringR,
-                 (Math.random() - 0.5) * 0.15, // Flat rings
+                 (Math.random() - 0.5) * 0.15, 
                  cz + Math.sin(ringAng) * ringR
              );
-             // Ring colors (tan/gold/grey)
              if (Math.random() > 0.5) color.setHex(0xC2B280);
              else color.setHex(0xA09070);
         } else {
-             // Planet Body Sphere
              const pr = Math.random() * planet.size;
              const pTheta = Math.random() * Math.PI * 2;
              const pPhi = Math.acos(2 * Math.random() - 1);
@@ -133,41 +233,28 @@ export const getShapeData = (type: string, count: number, radius: number = 2) =>
              const rand = Math.random();
 
              switch (planet.type) {
-                case 'mercury':
-                    color.setHex(0xA5A5A5); // Grey
-                    break;
-                case 'venus':
-                    color.setHex(0xE3BB76); // Yellowish
-                    break;
+                case 'mercury': color.setHex(0xA5A5A5); break;
+                case 'venus': color.setHex(0xE3BB76); break;
                 case 'earth':
-                    // Earth: Blue oceans, Green land, White clouds
-                    if (rand > 0.7) color.setHex(0xFFFFFF); // Clouds
-                    else if (rand > 0.35) color.setHex(0x1E90FF); // Ocean
-                    else color.setHex(0x228B22); // Land
+                    if (rand > 0.7) color.setHex(0xFFFFFF); 
+                    else if (rand > 0.35) color.setHex(0x1E90FF); 
+                    else color.setHex(0x228B22); 
                     break;
                 case 'mars':
-                    if (rand > 0.8) color.setHex(0x8B4513); // Dark spots
-                    else color.setHex(0xE27B58); // Rusty Red
+                    if (rand > 0.8) color.setHex(0x8B4513); 
+                    else color.setHex(0xE27B58); 
                     break;
                 case 'jupiter':
-                    // Jupiter Bands: Based on local Y height relative to planet center
-                    // We need to know the Y relative to the planet center (0)
                     const localY = vec.y; 
                     const band = Math.abs(localY / planet.size);
-                    if (band < 0.2) color.setHex(0xD9A066); // Main band
-                    else if (band < 0.4) color.setHex(0xF4E4C1); // Light band
-                    else if (band < 0.6) color.setHex(0xCD853F); // Darker band
-                    else color.setHex(0x8B4513); // Poles
+                    if (band < 0.2) color.setHex(0xD9A066); 
+                    else if (band < 0.4) color.setHex(0xF4E4C1); 
+                    else if (band < 0.6) color.setHex(0xCD853F); 
+                    else color.setHex(0x8B4513); 
                     break;
-                case 'saturn':
-                    color.setHex(0xEAD6B8); // Pale Gold
-                    break;
-                case 'uranus':
-                    color.setHex(0xAFEEEE); // Pale Turquoise
-                    break;
-                case 'neptune':
-                    color.setHex(0x4169E1); // Royal Blue
-                    break;
+                case 'saturn': color.setHex(0xEAD6B8); break;
+                case 'uranus': color.setHex(0xAFEEEE); break;
+                case 'neptune': color.setHex(0x4169E1); break;
              }
         }
       }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useStore, ShapeType } from '../store';
 import { motion } from 'framer-motion';
-import { Heart, Circle, Disc, Flower2, Sparkles, Orbit, ArrowLeft } from 'lucide-react';
+import { Heart, Circle, Disc, Flower2, Sparkles, Orbit, ArrowLeft, Type } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -15,11 +15,16 @@ const shapes: { id: ShapeType; icon: React.ElementType; label: string }[] = [
 ];
 
 const UI: React.FC = () => {
-  const { currentShape, setShape, isHandDetected } = useStore();
+  const { currentShape, setShape, isHandDetected, userName } = useStore();
+
+  // Add Name option dynamically if user has a name
+  // FIX: Increased slice to 8 to match input limit
+  const displayShapes = userName 
+    ? [...shapes, { id: 'text' as ShapeType, icon: Type, label: userName.slice(0, 8) }] 
+    : shapes;
 
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-8 z-50">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
         <div className="pointer-events-auto">
             <Link to="/" className="flex items-center gap-2 text-white/50 hover:text-white transition-colors mb-2 text-sm">
@@ -30,7 +35,6 @@ const UI: React.FC = () => {
             </h1>
         </div>
         
-        {/* Hand Status Indicator (Left side on desktop to avoid camera overlap) */}
         <div className={clsx(
           "px-4 py-2 rounded-full backdrop-blur-md border transition-colors duration-300 self-start sm:self-auto sm:mr-auto sm:ml-8",
           isHandDetected 
@@ -44,11 +48,10 @@ const UI: React.FC = () => {
         </div>
       </div>
 
-      {/* Shape Selector */}
       <div className="pointer-events-auto w-full overflow-x-auto pb-4 sm:pb-0">
         <div className="flex sm:justify-center min-w-max sm:min-w-0 gap-2 sm:gap-4 px-2">
           <div className="flex gap-2 p-2 bg-black/40 backdrop-blur-xl rounded-2xl border border-white/10">
-            {shapes.map((shape) => {
+            {displayShapes.map((shape) => {
               const Icon = shape.icon;
               const isActive = currentShape === shape.id;
               
@@ -64,7 +67,7 @@ const UI: React.FC = () => {
                   whileTap={{ scale: 0.95 }}
                 >
                   <Icon size={20} className={clsx("mb-1 sm:mb-2 transition-transform duration-300", isActive && "scale-110")} />
-                  <span className="text-[9px] sm:text-[10px] font-medium uppercase tracking-wider">{shape.label}</span>
+                  <span className="text-[9px] sm:text-[10px] font-medium uppercase tracking-wider truncate max-w-full px-1">{shape.label}</span>
                   
                   {isActive && (
                     <motion.div

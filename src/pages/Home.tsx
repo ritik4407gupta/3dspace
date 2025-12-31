@@ -1,9 +1,29 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Sparkles, Hand, Move3d } from 'lucide-react';
+import { Sparkles, Hand, Move3d, ArrowRight } from 'lucide-react';
+import { useStore } from '../store';
+import clsx from 'clsx';
 
 const Home: React.FC = () => {
+  const navigate = useNavigate();
+  const [nameInput, setNameInput] = useState('');
+  const setUserName = useStore(state => state.setUserName);
+
+  const handleStart = () => {
+    if (nameInput.trim()) {
+        setUserName(nameInput.trim());
+    }
+    navigate('/experience');
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val.length <= 8) {
+        setNameInput(val);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center relative overflow-hidden">
       {/* Background Gradients */}
@@ -31,25 +51,43 @@ const Home: React.FC = () => {
             Shape galaxies, solar systems, and abstract forms using just your webcam.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-            <Link 
-              to="/experience"
-              className="group relative px-8 py-4 bg-white text-black rounded-full font-bold text-lg hover:bg-cyan-50 transition-all duration-300 hover:scale-105 active:scale-95"
+          <div className="flex flex-col items-center gap-6 mb-16">
+            {/* Name Input */}
+            <div className="flex flex-col items-center gap-2 w-full max-w-xs">
+                <div className="relative group w-full">
+                    <input 
+                        type="text" 
+                        placeholder="ENTER NAME" 
+                        value={nameInput}
+                        onChange={handleChange}
+                        maxLength={8}
+                        className="w-full px-6 py-4 bg-white/5 border border-white/10 rounded-full text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 transition-all text-center uppercase tracking-widest font-bold"
+                        onKeyDown={(e) => e.key === 'Enter' && handleStart()}
+                    />
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-mono text-white/30 pointer-events-none">
+                        {nameInput.length}/8
+                    </div>
+                </div>
+                <span className={clsx("text-xs transition-opacity duration-300", nameInput.length === 8 ? "text-red-400 opacity-100" : "opacity-0")}>
+                    Maximum length reached
+                </span>
+            </div>
+
+            <button 
+              onClick={handleStart}
+              className="group relative px-8 py-4 bg-white text-black rounded-full font-bold text-lg hover:bg-cyan-50 transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-2"
             >
               Get Started
+              <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
               <div className="absolute inset-0 rounded-full ring-2 ring-white/50 group-hover:ring-cyan-400/50 animate-pulse" />
-            </Link>
-            
-            <a href="https://github.com" target="_blank" rel="noreferrer" className="px-8 py-4 rounded-full font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all">
-              View Source
-            </a>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
             <div className="p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm">
               <Hand className="text-cyan-400 mb-4" size={32} />
               <h3 className="text-xl font-bold mb-2">Hand Tracking</h3>
-              <p className="text-white/50 text-sm">Powered by MediaPipe AI to detect hand gestures in real-time with high precision.</p>
+              <p className="text-white/50 text-sm">Pinch to shrink, open to expand. Rotate your hand to spin the universe.</p>
             </div>
             <div className="p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm">
               <Move3d className="text-purple-400 mb-4" size={32} />
