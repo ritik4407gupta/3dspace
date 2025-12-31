@@ -18,9 +18,9 @@ const UI: React.FC = () => {
   const { currentShape, setShape, isHandDetected } = useStore();
 
   return (
-    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-8">
+    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-8 z-50">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
         <div className="pointer-events-auto">
             <Link to="/" className="flex items-center gap-2 text-white/50 hover:text-white transition-colors mb-2 text-sm">
                 <ArrowLeft size={16} /> Back to Home
@@ -30,8 +30,9 @@ const UI: React.FC = () => {
             </h1>
         </div>
         
+        {/* Hand Status Indicator (Left side on desktop to avoid camera overlap) */}
         <div className={clsx(
-          "px-4 py-2 rounded-full backdrop-blur-md border transition-colors duration-300 self-start sm:self-auto",
+          "px-4 py-2 rounded-full backdrop-blur-md border transition-colors duration-300 self-start sm:self-auto sm:mr-auto sm:ml-8",
           isHandDetected 
             ? "bg-green-500/20 border-green-500/50 text-green-300" 
             : "bg-red-500/20 border-red-500/50 text-red-300"

@@ -9,18 +9,20 @@ const RADIUS = 3;
 
 const Particles: React.FC = () => {
   const pointsRef = useRef<THREE.Points>(null);
-  const { handPosition, isHandDetected, currentShape } = useStore();
+  const cursorRef = useRef<THREE.Mesh>(null);
+  
+  // SELECTORS: Only subscribe to things that should trigger a re-render (like shape change)
+  // We DO NOT subscribe to handPosition here to avoid 60fps re-renders
+  const currentShape = useStore(state => state.currentShape);
   
   // Initialize particles
   const { positions, colors, targetPositions, velocities } = useMemo(() => {
-    // Initial load (default sphere)
     const { positions: initialTargets, colors: initialColors } = getShapeData('sphere', COUNT, RADIUS);
     
     const positions = new Float32Array(COUNT * 3);
     const velocities = new Float32Array(COUNT * 3); 
 
     for (let i = 0; i < COUNT; i++) {
-      // Random start positions
       positions[i * 3] = (Math.random() - 0.5) * 20;
       positions[i * 3 + 1] = (Math.random() - 0.5) * 20;
       positions[i * 3 + 2] = (Math.random() - 0.5) * 20;
@@ -38,22 +40,17 @@ const Particles: React.FC = () => {
     };
   }, []); 
 
-  // Update targets AND colors when shape changes
+  // Update targets when shape changes
   useEffect(() => {
     const { positions: newTargets, colors: newColors } = getShapeData(currentShape, COUNT, RADIUS);
     
-    // Update target positions reference
     for(let i=0; i<newTargets.length; i++) {
         targetPositions[i] = newTargets[i];
     }
 
-    // Update colors directly on the geometry attribute
     if (pointsRef.current) {
         const colorAttr = pointsRef.current.geometry.attributes.color;
         for(let i=0; i<newColors.length; i++) {
-            colorAttr.setX(i, newColors[i]); // R is at index i if we treat it as scalar array? No, setX/Y/Z is for vector3
-            // But array is flat. 
-            // The safest way for bufferAttribute:
             // @ts-ignore
             colorAttr.array[i] = newColors[i];
         }
@@ -62,24 +59,48 @@ const Particles: React.FC = () => {
   }, [currentShape, targetPositions]);
 
   useFrame((state) => {
+    const time = state.clock.getElapsedTime();
+    
+    // DIRECT ACCESS: Get state directly without hooks to prevent re-renders
+    const { handPosition, isHandDetected } = useStore.getState();
+
+    // Update Cursor Visual
+    if (cursorRef.current) {
+        if (isHandDetected && handPosition) {
+            // Smoothly interpolate cursor position
+            cursorRef.current.position.lerp(new THREE.Vector3(handPosition.x, handPosition.y, 0), 0.2);
+            cursorRef.current.visible = true;
+            
+            // Pulse effect
+            const scale = 1 + Math.sin(time * 10) * 0.2;
+            cursorRef.current.scale.set(scale, scale, scale);
+        } else {
+            cursorRef.current.visible = false;
+        }
+    }
+
     if (!pointsRef.current) return;
 
     const geometry = pointsRef.current.geometry;
     const posAttr = geometry.attributes.position;
     const currentPositions = posAttr.array as Float32Array;
-
-    const time = state.clock.getElapsedTime();
     
     // Physics parameters
     const springStrength = 0.05; 
     const damping = 0.92; 
-    const handRepulsionRadius = 3.5; // Increased radius for better interaction
-    const handForce = 0.25; // Increased force
+    const handRepulsionRadius = 4.0; // Large radius
+    const handForce = 0.5; // Strong force
+
+    // Use local variables for hand pos to avoid lookups in loop
+    const hx = handPosition?.x || 0;
+    const hy = handPosition?.y || 0;
+    // Force Z to 0 for planar interaction (Screen space -> 3D Plane)
+    const hz = 0; 
 
     for (let i = 0; i < COUNT; i++) {
       const i3 = i * 3;
       
-      // 1. Seek Target Force
+      // 1. Seek Target
       const tx = targetPositions[i3];
       const ty = targetPositions[i3 + 1];
       const tz = targetPositions[i3 + 2];
@@ -88,7 +109,7 @@ const Particles: React.FC = () => {
       const y = currentPositions[i3 + 1];
       const z = currentPositions[i3 + 2];
 
-      // Add some noise/flow based on time
+      // Noise
       const noiseX = Math.sin(time * 0.5 + y * 0.5) * 0.02;
       const noiseY = Math.cos(time * 0.3 + x * 0.5) * 0.02;
 
@@ -97,28 +118,31 @@ const Particles: React.FC = () => {
       let az = (tz - z) * springStrength;
 
       // 2. Hand Interaction
-      if (isHandDetected && handPosition) {
-        const dx = x - handPosition.x;
-        const dy = y - handPosition.y;
-        const dz = z - handPosition.z;
-        const distSq = dx * dx + dy * dy + dz * dz;
+      if (isHandDetected) {
+        const dx = x - hx;
+        const dy = y - hy;
+        const dz = z - hz;
+        
+        // Calculate distance but ignore Z for "Cylinder" interaction field
+        // This makes it feel like touching a screen regardless of particle depth
+        const distSq = dx * dx + dy * dy + (dz * 0.2) * (dz * 0.2); 
         
         if (distSq < handRepulsionRadius * handRepulsionRadius) {
           const dist = Math.sqrt(distSq);
           const force = (1 - dist / handRepulsionRadius) * handForce;
           
-          // Repulse
-          ax += dx * force * 8;
-          ay += dy * force * 8;
-          az += dz * force * 8;
+          // Repulse outwards
+          ax += dx * force * 15;
+          ay += dy * force * 15;
+          az += dz * force * 15;
 
-          // Swirl
-          ax += -dz * force * 4;
-          az += dx * force * 4;
+          // Add swirl/curl noise
+          ax += -dy * force * 5;
+          ay += dx * force * 5;
         }
       }
 
-      // 3. Integrate Physics
+      // 3. Integrate
       velocities[i3] += ax;
       velocities[i3 + 1] += ay;
       velocities[i3 + 2] += az;
@@ -133,37 +157,44 @@ const Particles: React.FC = () => {
     }
 
     posAttr.needsUpdate = true;
-    
-    // Rotate the whole system slowly
     pointsRef.current.rotation.y = time * 0.05;
   });
 
   return (
-    <points ref={pointsRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={COUNT}
-          array={positions}
-          itemSize={3}
+    <>
+        <points ref={pointsRef}>
+        <bufferGeometry>
+            <bufferAttribute
+            attach="attributes-position"
+            count={COUNT}
+            array={positions}
+            itemSize={3}
+            />
+            <bufferAttribute
+            attach="attributes-color"
+            count={COUNT}
+            array={colors}
+            itemSize={3}
+            />
+        </bufferGeometry>
+        <pointsMaterial
+            size={0.15}
+            vertexColors
+            transparent
+            opacity={0.8}
+            sizeAttenuation
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
         />
-        <bufferAttribute
-          attach="attributes-color"
-          count={COUNT}
-          array={colors}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <pointsMaterial
-        size={0.12} // Slightly larger particles
-        vertexColors
-        transparent
-        opacity={0.8}
-        sizeAttenuation
-        blending={THREE.AdditiveBlending}
-        depthWrite={false}
-      />
-    </points>
+        </points>
+
+        {/* Visual Cursor Feedback */}
+        <mesh ref={cursorRef} visible={false}>
+            <sphereGeometry args={[0.3, 16, 16]} />
+            <meshBasicMaterial color="#00ffff" transparent opacity={0.6} blending={THREE.AdditiveBlending} />
+            <pointLight distance={5} intensity={2} color="#00ffff" />
+        </mesh>
+    </>
   );
 };
 

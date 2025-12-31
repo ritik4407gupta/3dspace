@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Webcam from 'react-webcam';
 import { FilesetResolver, HandLandmarker, DrawingUtils } from '@mediapipe/tasks-vision';
 import { useStore } from '../store';
-import { Camera, Minimize2 } from 'lucide-react';
+import { Camera, Minimize2, AlertCircle, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 
 const HandTracker: React.FC = () => {
@@ -11,57 +11,63 @@ const HandTracker: React.FC = () => {
   const [loaded, setLoaded] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState("Initializing AI...");
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const requestRef = useRef<number>(0);
   
+  // Direct store access for setters is fine, they are stable
   const { setHandPosition, setHandDetected } = useStore();
 
+  const initHandLandmarker = async () => {
+    try {
+      setStatus("Loading Model...");
+      setError(null);
+      
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+      );
+      
+      handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numHands: 1,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+      
+      setLoaded(true);
+      setStatus("Waiting for Camera...");
+    } catch (error) {
+      console.error("Error initializing hand landmarker:", error);
+      setError("Failed to load AI model.");
+    }
+  };
+
   useEffect(() => {
-    const initHandLandmarker = async () => {
-      try {
-        console.log("Initializing HandLandmarker...");
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-        );
-        
-        handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-            delegate: "GPU"
-          },
-          runningMode: "VIDEO",
-          numHands: 1,
-          minHandDetectionConfidence: 0.5,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        });
-        
-        setLoaded(true);
-        console.log("HandLandmarker initialized successfully");
-      } catch (error) {
-        console.error("Error initializing hand landmarker:", error);
-        setError("Failed to load AI model");
-      }
-    };
-
     initHandLandmarker();
-
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
   }, []);
 
   const detect = () => {
+    if (requestRef.current) cancelAnimationFrame(requestRef.current);
+
     if (
       webcamRef.current && 
       webcamRef.current.video && 
-      webcamRef.current.video.readyState === 4 &&
+      webcamRef.current.video.readyState >= 2 && 
       handLandmarkerRef.current
     ) {
+      if (status !== "TRACKING ACTIVE") setStatus("TRACKING ACTIVE");
+
       const video = webcamRef.current.video;
       const canvas = canvasRef.current;
       
-      // Match canvas size to video
       if (canvas) {
         if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
             canvas.width = video.videoWidth;
@@ -80,34 +86,38 @@ const HandTracker: React.FC = () => {
       if (result.landmarks && result.landmarks.length > 0) {
         setHandDetected(true);
         
-        // Draw landmarks
+        // Draw Skeleton
         if (ctx && canvas) {
             const drawingUtils = new DrawingUtils(ctx);
             for (const landmarks of result.landmarks) {
                 drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
                     color: "#00FF00",
-                    lineWidth: 3
+                    lineWidth: 4
                 });
                 drawingUtils.drawLandmarks(landmarks, {
                     color: "#FF0000",
-                    lineWidth: 2
+                    lineWidth: 2,
+                    radius: 3
                 });
             }
         }
 
-        // Get the center of the palm (approximate using index finger MCP or wrist)
-        const landmark = result.landmarks[0][9];
+        // Use Index Finger Tip (8)
+        const landmark = result.landmarks[0][8];
         
-        // Map normalized coordinates (0-1) to 3D space (-1 to 1 range approx)
-        // Invert X because webcam is mirrored
-        const x = (1 - landmark.x) * 2 - 1; 
-        const y = -(landmark.y * 2 - 1); // Invert Y because screen Y is down
+        // MAPPING CALIBRATION
+        // Camera FOV 45 at Z=15 gives visible height ~12.5 units
+        // Aspect ratio ~1.6 gives width ~20 units
+        // X: [0, 1] -> [-10, 10] (Mirrored)
+        // Y: [0, 1] -> [6, -6]
         
-        // Z is relative depth. 
-        const z = landmark.z ? -landmark.z * 10 : 0; 
+        const x = (1 - landmark.x) * 20 - 10; 
+        const y = -(landmark.y * 14 - 7); 
+        
+        // We ignore Z for physics interaction to ensure planar contact
+        const z = 0; 
 
-        // Scale to scene size (approx 20 units wide)
-        setHandPosition({ x: x * 10, y: y * 8, z }); 
+        setHandPosition({ x, y, z }); 
       } else {
         setHandDetected(false);
         setHandPosition(null);
@@ -124,10 +134,10 @@ const HandTracker: React.FC = () => {
 
   return (
     <div className={clsx(
-      "fixed z-50 transition-all duration-300 ease-in-out bg-black/80 border border-white/20 backdrop-blur-md shadow-2xl overflow-hidden",
+      "fixed z-[100] transition-all duration-300 ease-in-out bg-black/90 border border-white/20 backdrop-blur-md shadow-2xl overflow-hidden",
       minimized 
-        ? "bottom-4 right-4 w-12 h-12 rounded-full cursor-pointer hover:bg-white/10" 
-        : "top-4 right-4 sm:bottom-auto sm:top-4 sm:right-4 w-40 h-32 sm:w-64 sm:h-48 rounded-xl"
+        ? "top-4 right-4 w-12 h-12 rounded-full cursor-pointer hover:bg-white/10" 
+        : "top-4 right-4 w-48 h-36 sm:w-72 sm:h-56 rounded-xl"
     )}>
       {minimized ? (
         <button 
@@ -139,29 +149,38 @@ const HandTracker: React.FC = () => {
       ) : (
         <>
             <div className="relative w-full h-full">
-                {!loaded && !error && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-white/50 text-xs z-20 bg-black/90 p-4 text-center">
-                        <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mb-2"></div>
-                        <span>Loading AI Model...</span>
+                {/* Status Overlay */}
+                {!loaded || error ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70 text-xs z-20 bg-black/90 p-4 text-center">
+                        {error ? (
+                            <>
+                                <AlertCircle className="text-red-500 mb-2" size={24} />
+                                <span className="text-red-400 mb-2">{error}</span>
+                                <button 
+                                  onClick={() => initHandLandmarker()}
+                                  className="flex items-center gap-1 px-3 py-1 bg-white/10 rounded-full hover:bg-white/20"
+                                >
+                                  <RefreshCw size={12} /> Retry
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <div className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mb-2"></div>
+                                <span>{status}</span>
+                            </>
+                        )}
                     </div>
-                )}
-
-                {error && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-red-400 text-xs z-20 bg-black/90 p-2 text-center">
-                        <span>{error}</span>
-                        <button onClick={() => window.location.reload()} className="mt-2 underline">Retry</button>
-                    </div>
-                )}
+                ) : null}
                 
                 <Webcam
                     ref={webcamRef}
                     className="absolute inset-0 w-full h-full object-cover mirror opacity-60"
                     mirrored={true}
                     screenshotFormat="image/jpeg"
-                    playsInline={true} // CRITICAL for mobile
+                    playsInline={true}
                     videoConstraints={{
-                        width: 320,
-                        height: 240,
+                        width: 640,
+                        height: 480,
                         facingMode: "user"
                     }}
                     onUserMediaError={() => setError("Camera access denied")}
@@ -173,23 +192,18 @@ const HandTracker: React.FC = () => {
                     className="absolute inset-0 w-full h-full object-cover mirror z-10"
                 />
 
-                {/* Controls */}
-                <div className="absolute top-2 right-2 z-30 flex gap-2">
+                {/* Header / Controls */}
+                <div className="absolute top-0 left-0 right-0 p-2 flex justify-between items-start z-30 bg-gradient-to-b from-black/80 to-transparent">
+                    <span className="text-[10px] font-mono text-white/80 uppercase tracking-wider flex items-center gap-1">
+                        <div className={clsx("w-2 h-2 rounded-full", status === "TRACKING ACTIVE" ? "bg-green-500 animate-pulse" : "bg-yellow-500")} />
+                        {status === "TRACKING ACTIVE" ? "Active" : "Init..."}
+                    </span>
                     <button 
                         onClick={() => setMinimized(true)}
-                        className="p-1 rounded-full bg-black/50 text-white/70 hover:text-white hover:bg-black/80 transition-colors"
+                        className="p-1 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
                     >
-                        <Minimize2 size={14} />
+                        <Minimize2 size={12} />
                     </button>
-                </div>
-
-                <div className="absolute bottom-2 left-2 z-30 flex items-center gap-1 text-[10px] text-white/90 font-mono bg-black/60 px-2 py-0.5 rounded-full">
-                    {loaded ? (
-                        <>
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                            TRACKING ACTIVE
-                        </>
-                    ) : "INITIALIZING"}
                 </div>
             </div>
         </>
